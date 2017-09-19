@@ -54,6 +54,7 @@ class UdpStreamingReceiver extends StreamingReceiver {
     int frameBufferPos = 0;
     DatagramPacket packet = new DatagramPacket(new byte[PACKET_BUFFER_SIZE], PACKET_BUFFER_SIZE);
     int nextSequenceNo = 0;
+    int nextFrameNo = 0;
 
     void open(int port) {
         try {
@@ -80,8 +81,6 @@ class UdpStreamingReceiver extends StreamingReceiver {
     byte[] nextFrame() {
         int newFrame = newFrameIndex();
 
-        frameBufferPos = 0;
-
         while (true) {
             try {
                 sock.receive(packet);
@@ -98,20 +97,34 @@ class UdpStreamingReceiver extends StreamingReceiver {
                         // Prepare for the new frame
                         newFrame = newFrameIndex();
                         System.arraycopy(packet.getData(), 0, frameBuffer[newFrame], 0, H264_AUD.length);
+                        frameBufferPos = H264_AUD.length;
+                        nextSequenceNo = 1;
+                        // Check Frame No.
+                        int frameNo = getInt(packet.getData()) >> 16;
+                        Log.i(getClass().getSimpleName(), "Frame No " + frameNo);
+                        if (frameNo != nextFrameNo) {
+                            Log.i(getClass().getSimpleName(), "Expected frame No: " + nextFrameNo + " Actual: " + frameNo);
+                        }
+                        nextFrameNo = frameNo + 1;
                         break;
                     } else {
                         // Start of frame
                         System.arraycopy(packet.getData(), 0, frameBuffer[newFrame], 0, H264_AUD.length);
-                        frameBufferPos += H264_AUD.length;
+                        frameBufferPos = H264_AUD.length;
                         nextSequenceNo = 1;
+                        // Check Frame No.
+                        int frameNo = getInt(packet.getData()) >> 16;
+                        Log.i(getClass().getSimpleName(), "Frame No " + frameNo);
+                        nextFrameNo = frameNo + 1;
                         continue;
                     }
                 }
             }
             if (CHECK_SEQUENCE_NO && frameBufferPos > 0) {
-                int seqNo = getInt(packet.getData());
+                int seqNo = getInt(packet.getData()) & 0xFFFF;
                 if (seqNo != nextSequenceNo) { // Packet drop
-                    Log.i("nextFrame", "Expected: " + nextSequenceNo + " Actual: " + seqNo);
+                    frameBufferPos = 0;
+                    Log.i(getClass().getSimpleName(), "Expected Sequence No: " + nextSequenceNo + " Actual: " + seqNo);
                     break; // Drop this frame and return the last(old) one.
                 } else {
                     nextSequenceNo++;
@@ -124,7 +137,8 @@ class UdpStreamingReceiver extends StreamingReceiver {
                 } else {
                     // If received data exceeds the size of the current(new) frame buffer,
                     // just drop it and return the last(old) one.
-                    Log.i("nextFrame", "Too much frame data. Dropped this frame.");
+                    frameBufferPos = 0;
+                    Log.i(getClass().getSimpleName(), "Too much frame data. Dropped this frame.");
                     break;
                 }
             }
@@ -196,6 +210,8 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
         @Override
         protected String doInBackground(String... data) {
+            long frameCount = 0;
+            long prevTime = System.currentTimeMillis();
 
             MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
 
@@ -213,6 +229,14 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
                 int outputBufferId = decoder.dequeueOutputBuffer(bufferInfo, 0);
                 if (outputBufferId >= 0) {
                     decoder.releaseOutputBuffer(outputBufferId, true);
+                }
+
+                frameCount++;
+                long currTime = System.currentTimeMillis();
+                if (currTime - prevTime >= 1000) {
+                    Log.i(getClass().getSimpleName(), frameCount + " fps");
+                    prevTime = currTime;
+                    frameCount = 0;
                 }
 
             }
