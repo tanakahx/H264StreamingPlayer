@@ -1,21 +1,20 @@
 package com.example.tanakahx.h264streamingplayer;
 
-import android.content.pm.ActivityInfo;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.WindowManager;
+import android.view.View;
 
-import java.io.BufferedInputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 
 abstract class StreamingReceiver {
@@ -23,9 +22,11 @@ abstract class StreamingReceiver {
 
     abstract void open(int n);
 
-    abstract byte[] nextFrame();
+    abstract byte[] nextFrame() throws IOException;
 
     abstract int getFrameSize();
+
+    abstract boolean isValidFrame();
 
     abstract void close();
 
@@ -44,24 +45,35 @@ class UdpStreamingReceiver extends StreamingReceiver {
 
     static final boolean CHECK_SEQUENCE_NO = true;
     static final int SEQUENCE_NO_SIZE = CHECK_SEQUENCE_NO ? 4 : 0;
-    static final int FRAME_BUFFER_SIZE = 256; // KB
+    static final int FRAME_BUFFER_SIZE = 512; // KB
     static final int PACKET_BUFFER_SIZE = 2048; // Byte (should be greater than MTU)
 
     DatagramSocket sock;
-    byte[][] frameBuffer = new byte[2][FRAME_BUFFER_SIZE*1024];
-    int[] frameBufferSize = {0, 0};
-    int lastFrame = frameBufferSize.length - 1;
-    int frameBufferPos = 0;
-    DatagramPacket packet = new DatagramPacket(new byte[PACKET_BUFFER_SIZE], PACKET_BUFFER_SIZE);
-    int nextSequenceNo = 0;
-    int nextFrameNo = 0;
+    byte[][] frameBuffer;
+    int[] frameBufferSize;
+    int lastFrame;
+    int frameBufferPos;
+    DatagramPacket packet;
+    int nextSequenceNo;
+    int nextFrameNo;
+    boolean isDropped;
 
     void open(int port) {
         try {
-            sock = new DatagramSocket(port);
+            if (sock == null) {
+                sock = new DatagramSocket(port);
+                sock.setSoTimeout(33);
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
+        frameBuffer = new byte[2][FRAME_BUFFER_SIZE*1024];
+        packet = new DatagramPacket(new byte[PACKET_BUFFER_SIZE], PACKET_BUFFER_SIZE);
+        frameBufferSize = new int[] {0, 0};
+        lastFrame = frameBufferSize.length - 1;
+        frameBufferPos = 0;
+        nextSequenceNo = 0;
+        nextFrameNo = 0;
     }
 
     int getInt(byte[] b) {
@@ -78,32 +90,36 @@ class UdpStreamingReceiver extends StreamingReceiver {
         return (lastFrame + 1 >= frameBufferSize.length) ? 0 : lastFrame + 1;
     }
 
-    byte[] nextFrame() {
+    byte[] nextFrame() throws IOException {
         int newFrame = newFrameIndex();
+        isDropped = false;
 
         while (true) {
-            try {
-                sock.receive(packet);
-            } catch (IOException e) {
-                e.printStackTrace();
-                break;
+            sock.receive(packet);
+            int streamNo = (getInt(packet.getData()) >> 24) & 0x000000FF;
+            if (streamNo != 0) {
+                continue;
             }
+
             if (packet.getLength() - SEQUENCE_NO_SIZE == H264_AUD.length) {
                 if (isAUD(packet.getData(), SEQUENCE_NO_SIZE)) {
                     if (frameBufferPos > 0) {
-                        // End of frame
-                        frameBufferSize[newFrame] = frameBufferPos;
-                        lastFrame = newFrame;
-                        // Prepare for the new frame
-                        newFrame = newFrameIndex();
+                        if (!isDropped) {
+                            // End of frame
+                            frameBufferSize[newFrame] = frameBufferPos;
+                            lastFrame = newFrame;
+                            // Prepare for the new frame
+                            newFrame = newFrameIndex();
+                        }
                         System.arraycopy(packet.getData(), 0, frameBuffer[newFrame], 0, H264_AUD.length);
                         frameBufferPos = H264_AUD.length;
                         nextSequenceNo = 1;
                         // Check Frame No.
-                        int frameNo = getInt(packet.getData()) >> 16;
-                        Log.i(getClass().getSimpleName(), "Frame No " + frameNo);
+                        int frameNo = (getInt(packet.getData()) >> 16) & 0x000000FF;
                         if (frameNo != nextFrameNo) {
                             Log.i(getClass().getSimpleName(), "Expected frame No: " + nextFrameNo + " Actual: " + frameNo);
+                        } else {
+//                            Log.i(getClass().getSimpleName(), "Completed Frame No " + nextFrameNo);
                         }
                         nextFrameNo = frameNo + 1;
                         break;
@@ -112,25 +128,20 @@ class UdpStreamingReceiver extends StreamingReceiver {
                         System.arraycopy(packet.getData(), 0, frameBuffer[newFrame], 0, H264_AUD.length);
                         frameBufferPos = H264_AUD.length;
                         nextSequenceNo = 1;
-                        // Check Frame No.
-                        int frameNo = getInt(packet.getData()) >> 16;
-                        Log.i(getClass().getSimpleName(), "Frame No " + frameNo);
-                        nextFrameNo = frameNo + 1;
                         continue;
                     }
                 }
             }
-            if (CHECK_SEQUENCE_NO && frameBufferPos > 0) {
-                int seqNo = getInt(packet.getData()) & 0xFFFF;
+            if (!isDropped && CHECK_SEQUENCE_NO && frameBufferPos > 0) {
+                int seqNo = getInt(packet.getData()) & 0x0000FFFF;
                 if (seqNo != nextSequenceNo) { // Packet drop
-                    frameBufferPos = 0;
                     Log.i(getClass().getSimpleName(), "Expected Sequence No: " + nextSequenceNo + " Actual: " + seqNo);
-                    break; // Drop this frame and return the last(old) one.
+                    isDropped = true;
                 } else {
                     nextSequenceNo++;
                 }
             }
-            if (frameBufferPos >= H264_AUD.length) {
+            if (!isDropped && frameBufferPos >= H264_AUD.length) {
                 if (frameBufferPos + packet.getLength() - SEQUENCE_NO_SIZE <= frameBuffer[newFrame].length) {
                     System.arraycopy(packet.getData(), SEQUENCE_NO_SIZE, frameBuffer[newFrame], frameBufferPos, packet.getLength() - SEQUENCE_NO_SIZE);
                     frameBufferPos += packet.getLength() - SEQUENCE_NO_SIZE;
@@ -150,88 +161,130 @@ class UdpStreamingReceiver extends StreamingReceiver {
         return frameBufferSize[lastFrame];
     }
 
+    boolean isValidFrame() {
+        return isDropped ? false : true;
+    }
+
     void close() {
-        try {
-            sock.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        sock.close();
     }
 
 }
 
 public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback {
 
+    static final int UDP_STREAMING_PORT = 1234;
+
     private StreamingReceiver receiver;
     private MediaCodec decoder;
     private MediaCodecDataProvider dataProvider;
+    private boolean isFullscreen;
+    private SurfaceView surface;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        SurfaceView surface = new SurfaceView(this);
+        surface = new SurfaceView(this);
         surface.getHolder().addCallback(this);
+        isFullscreen = true;
+        setFullscreen(isFullscreen);
         setContentView(surface);
 
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        surface.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setFullscreen(isFullscreen);
+                isFullscreen = (isFullscreen == true) ? false : true;
+            }
+        });
     }
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
+        Log.i(getClass().getSimpleName(), "surfaceCreated");
+        dataProvider = new MediaCodecDataProvider();
+        dataProvider.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, holder.getSurface());
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        receiver = new UdpStreamingReceiver();
-        receiver.open(1234);
-
-        MediaFormat mediaFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1920, 1080);
-        /* mediaFormat.setByteBuffer("csd-0", ...); */
-        /* mediaFormat.setByteBuffer("csd-1", ...); */
-        /* mediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 256*1024); */
-
-        try {
-            decoder = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
-            decoder.configure(mediaFormat, holder.getSurface(), null, 0);
-            decoder.start();
-            dataProvider = new MediaCodecDataProvider();
-            dataProvider.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-        } catch(Exception e) {
-            e.printStackTrace();
-        }
+        Log.i(getClass().getSimpleName(), "surfaceChanged");
     }
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        Log.i(getClass().getSimpleName(), "surfaceDestroyed");
+        dataProvider.cancel(true);
     }
 
-    private class MediaCodecDataProvider extends AsyncTask<String, String, String> {
+    void setFullscreen(boolean isFullscreen) {
+        if (isFullscreen) {
+            surface.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+        } else {
+            surface.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
+    }
+
+    private class MediaCodecDataProvider extends AsyncTask<Surface, Void, Void> {
 
         @Override
-        protected String doInBackground(String... data) {
+        protected Void doInBackground(Surface... surface) {
+            MediaFormat mediaFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1920, 1080);
+            /* mediaFormat.setByteBuffer("csd-0", ...); */
+            /* mediaFormat.setByteBuffer("csd-1", ...); */
+            /* mediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 256*1024); */
+            try {
+                decoder = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            decoder.configure(mediaFormat, surface[0], null, 0);
+            decoder.start();
+
+            receiver = new UdpStreamingReceiver();
+            receiver.open(UDP_STREAMING_PORT);
+
             long frameCount = 0;
             long prevTime = System.currentTimeMillis();
 
             MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
 
             while(!isCancelled()) {
-                byte[] frame = receiver.nextFrame();
+                byte[] frame;
+                try {
+                    frame = receiver.nextFrame();
+                } catch (SocketTimeoutException e) {
+//                    e.printStackTrace();
+                    if (isCancelled()) {
+                        break;
+                    } else {
+                        continue;
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    break;
+                }
                 int frameSize = receiver.getFrameSize();
 
                 int inputBufferId = decoder.dequeueInputBuffer(-1);
                 if(inputBufferId >= 0) {
                     ByteBuffer inputBuffer = decoder.getInputBuffer(inputBufferId);
                     inputBuffer.put(frame, 0, frameSize);
-                    decoder.queueInputBuffer(inputBufferId, 0, frameSize, 0, 0);
+                    decoder.queueInputBuffer(inputBufferId, 0, frameSize, 0, 0); // TODO: MediaCodec.BUFFER_FLAG_KEY_FRAME
                 }
 
-                int outputBufferId = decoder.dequeueOutputBuffer(bufferInfo, 0);
+                int outputBufferId = decoder.dequeueOutputBuffer(bufferInfo, -1);
                 if (outputBufferId >= 0) {
                     decoder.releaseOutputBuffer(outputBufferId, true);
                 }
 
-                frameCount++;
+                frameCount += receiver.isValidFrame() ? 1 : 0;
                 long currTime = System.currentTimeMillis();
                 if (currTime - prevTime >= 1000) {
                     Log.i(getClass().getSimpleName(), frameCount + " fps");
@@ -240,25 +293,23 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
                 }
 
             }
-            return "";
-        }
+            receiver.close();
+            decoder.stop();
 
-        @Override
-        protected void onPostExecute(String result) {
-            try {
-                decoder.stop();
-                decoder.release();
-            } catch(Exception e) {
-                e.printStackTrace();
-            }
+            return null;
         }
 
     }
 
     @Override
+    public void onStart() {
+        super.onStart();
+        Log.i(getClass().getSimpleName(), "onStart");
+    }
+
+    @Override
     public void onStop(){
         super.onStop();
-        dataProvider.cancel(true);
-        receiver.close();
+        Log.i(getClass().getSimpleName(), "onStop");
     }
 }
