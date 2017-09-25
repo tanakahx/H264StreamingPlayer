@@ -10,6 +10,8 @@ import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.widget.TableLayout;
+import android.widget.TableRow;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
@@ -17,24 +19,39 @@ import java.nio.ByteBuffer;
 
 public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback {
 
+    static final int TABLE_ROW = 1;
+    static final int TABLE_COL = 1;
     static final int UDP_STREAMING_PORT = 1234;
 
-    private StreamingReceiver receiver;
-    private MediaCodec decoder;
+    private TableLayout tableLayout;
+    private SurfaceView[] surfaceView;
     private MediaCodecDataProvider dataProvider;
     private boolean isFullscreen;
-    private SurfaceView surface;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        surface = new SurfaceView(this);
-        surface.getHolder().addCallback(this);
+
+        tableLayout = new TableLayout(this);
+
+        surfaceView = new SurfaceView[4];
+        int i = 0;
+        for (int h = 0; h < TABLE_ROW; h++) {
+            TableRow tableRow = new TableRow(this);
+            for (int v = 0; v < TABLE_COL; v++) {
+                surfaceView[i] = new SurfaceView(this);
+                surfaceView[i].getHolder().addCallback(this);
+                tableRow.addView(surfaceView[i], new TableRow.LayoutParams(TableRow.LayoutParams.MATCH_PARENT, TableRow.LayoutParams.MATCH_PARENT, 1));
+            }
+            tableLayout.addView(tableRow, new TableLayout.LayoutParams(TableLayout.LayoutParams.MATCH_PARENT, TableLayout.LayoutParams.MATCH_PARENT, 1));
+        }
+
+        setContentView(tableLayout);
+
         isFullscreen = true;
         setFullscreen(isFullscreen);
-        setContentView(surface);
 
-        surface.setOnClickListener(new View.OnClickListener() {
+        tableLayout.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 setFullscreen(isFullscreen);
@@ -63,14 +80,14 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
     void setFullscreen(boolean isFullscreen) {
         if (isFullscreen) {
-            surface.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
+            tableLayout.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
                     | View.SYSTEM_UI_FLAG_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                     | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
         } else {
-            surface.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            tableLayout.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
         }
     }
@@ -79,32 +96,30 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
         @Override
         protected Void doInBackground(Surface... surface) {
-            MediaFormat mediaFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1920, 1080);
-            /* mediaFormat.setByteBuffer("csd-0", ...); */
-            /* mediaFormat.setByteBuffer("csd-1", ...); */
-            /* mediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 256*1024); */
+
+            MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1920, 1080);
+            MediaCodec decoder;
+            MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
             try {
                 decoder = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+                decoder.configure(format, surface[0], null, 0);
+                decoder.start();
             } catch (IOException e) {
                 e.printStackTrace();
+                return null;
             }
-            decoder.configure(mediaFormat, surface[0], null, 0);
-            decoder.start();
 
-            receiver = new UdpStreamingReceiver();
+            StreamingReceiver receiver = new UdpStreamingReceiver();
             receiver.open(UDP_STREAMING_PORT);
 
             long frameCount = 0;
             long prevTime = System.currentTimeMillis();
 
-            MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
-
-            while(!isCancelled()) {
+            while (!isCancelled()) {
                 byte[] frame;
                 try {
                     frame = receiver.nextFrame();
                 } catch (SocketTimeoutException e) {
-//                    e.printStackTrace();
                     if (isCancelled()) {
                         break;
                     } else {
@@ -135,7 +150,6 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
                     prevTime = currTime;
                     frameCount = 0;
                 }
-
             }
             receiver.close();
             decoder.stop();
