@@ -1,81 +1,53 @@
 package com.example.tanakahx.h264streamingplayer;
 
-import android.media.MediaCodec;
-import android.media.MediaFormat;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.Surface;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
 import android.view.View;
 import android.widget.TableLayout;
 import android.widget.TableRow;
 
-import java.io.IOException;
-import java.net.SocketTimeoutException;
-import java.nio.ByteBuffer;
+public class MainActivity extends AppCompatActivity {
+    private static final String LOG_TAG = MainActivity.class.getSimpleName();
 
-public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback {
-
-    static final int TABLE_ROW = 1;
-    static final int TABLE_COL = 1;
-    static final int UDP_STREAMING_PORT = 1234;
+    private static final int TABLE_ROW = 2;
+    private static final int TABLE_COL = 2;
+    private static final int MAX_STREAM_COUNT = 4;
 
     private TableLayout tableLayout;
-    private SurfaceView[] surfaceView;
-    private MediaCodecDataProvider dataProvider;
+    private DecoderSurfaceView[] surfaceViews;
+    private UdpStreamingReceiver receiver;
     private boolean isFullscreen;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        tableLayout = new TableLayout(this);
+        receiver = new UdpStreamingReceiver(MAX_STREAM_COUNT);
 
-        surfaceView = new SurfaceView[4];
+        tableLayout = new TableLayout(this);
+        surfaceViews = new DecoderSurfaceView[MAX_STREAM_COUNT];
         int i = 0;
         for (int h = 0; h < TABLE_ROW; h++) {
             TableRow tableRow = new TableRow(this);
             for (int v = 0; v < TABLE_COL; v++) {
-                surfaceView[i] = new SurfaceView(this);
-                surfaceView[i].getHolder().addCallback(this);
-                tableRow.addView(surfaceView[i], new TableRow.LayoutParams(TableRow.LayoutParams.MATCH_PARENT, TableRow.LayoutParams.MATCH_PARENT, 1));
+                surfaceViews[i] = new DecoderSurfaceView(this, i);
+                tableRow.addView(surfaceViews[i], new TableRow.LayoutParams(TableRow.LayoutParams.MATCH_PARENT, TableRow.LayoutParams.MATCH_PARENT, 1));
+                i++;
             }
             tableLayout.addView(tableRow, new TableLayout.LayoutParams(TableLayout.LayoutParams.MATCH_PARENT, TableLayout.LayoutParams.MATCH_PARENT, 1));
         }
-
         setContentView(tableLayout);
-
-        isFullscreen = true;
-        setFullscreen(isFullscreen);
 
         tableLayout.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                setFullscreen(isFullscreen);
                 isFullscreen = (isFullscreen == true) ? false : true;
+                setFullscreen(isFullscreen);
             }
         });
-    }
-
-    @Override
-    public void surfaceCreated(SurfaceHolder holder) {
-        Log.i(getClass().getSimpleName(), "surfaceCreated");
-        dataProvider = new MediaCodecDataProvider();
-        dataProvider.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, holder.getSurface());
-    }
-
-    @Override
-    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        Log.i(getClass().getSimpleName(), "surfaceChanged");
-    }
-
-    @Override
-    public void surfaceDestroyed(SurfaceHolder holder) {
-        Log.i(getClass().getSimpleName(), "surfaceDestroyed");
-        dataProvider.cancel(true);
+        Log.d(LOG_TAG, "onCreate");
     }
 
     void setFullscreen(boolean isFullscreen) {
@@ -92,82 +64,27 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         }
     }
 
-    private class MediaCodecDataProvider extends AsyncTask<Surface, Void, Void> {
-
-        @Override
-        protected Void doInBackground(Surface... surface) {
-
-            MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1920, 1080);
-            MediaCodec decoder;
-            MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
-            try {
-                decoder = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
-                decoder.configure(format, surface[0], null, 0);
-                decoder.start();
-            } catch (IOException e) {
-                e.printStackTrace();
-                return null;
-            }
-
-            StreamingReceiver receiver = new UdpStreamingReceiver();
-            receiver.open(UDP_STREAMING_PORT);
-
-            long frameCount = 0;
-            long prevTime = System.currentTimeMillis();
-
-            while (!isCancelled()) {
-                byte[] frame;
-                try {
-                    frame = receiver.nextFrame();
-                } catch (SocketTimeoutException e) {
-                    if (isCancelled()) {
-                        break;
-                    } else {
-                        continue;
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    break;
-                }
-                int frameSize = receiver.getFrameSize();
-
-                int inputBufferId = decoder.dequeueInputBuffer(-1);
-                if(inputBufferId >= 0) {
-                    ByteBuffer inputBuffer = decoder.getInputBuffer(inputBufferId);
-                    inputBuffer.put(frame, 0, frameSize);
-                    decoder.queueInputBuffer(inputBufferId, 0, frameSize, 0, 0); // TODO: MediaCodec.BUFFER_FLAG_KEY_FRAME
-                }
-
-                int outputBufferId = decoder.dequeueOutputBuffer(bufferInfo, -1);
-                if (outputBufferId >= 0) {
-                    decoder.releaseOutputBuffer(outputBufferId, true);
-                }
-
-                frameCount += receiver.isValidFrame() ? 1 : 0;
-                long currTime = System.currentTimeMillis();
-                if (currTime - prevTime >= 1000) {
-                    Log.i(getClass().getSimpleName(), frameCount + " fps");
-                    prevTime = currTime;
-                    frameCount = 0;
-                }
-            }
-            receiver.close();
-            decoder.stop();
-
-            return null;
-        }
-
-    }
-
     @Override
     public void onStart() {
         super.onStart();
-        Log.i(getClass().getSimpleName(), "onStart");
+        isFullscreen = true;
+        setFullscreen(isFullscreen);
+
+        if (receiver == null) {
+            receiver = new UdpStreamingReceiver(MAX_STREAM_COUNT);
+        }
+        for (DecoderSurfaceView surfaceView : surfaceViews) {
+            surfaceView.setReceiver(receiver);
+        }
+        receiver.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+        Log.d(LOG_TAG, "onStart");
     }
 
     @Override
     public void onStop(){
         super.onStop();
-        Log.i(getClass().getSimpleName(), "onStop");
+        receiver.cancel(true);
+        receiver = null;
+        Log.d(LOG_TAG, "onStop");
     }
 }
