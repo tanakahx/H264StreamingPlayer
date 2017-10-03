@@ -38,11 +38,22 @@ class UdpStreamingReceiver extends AsyncTask<Void, Void, Void> {
     @Override
     protected Void doInBackground(Void... params) {
         DatagramPacket packet = new DatagramPacket(new byte[PACKET_BUFFER_SIZE], PACKET_BUFFER_SIZE);
+        long prevTime = System.currentTimeMillis();
+        long recvByte = 0;
 
         open(UDP_STREAMING_PORT);
         while (!isCancelled()) {
             try {
                 sock.receive(packet);
+
+                recvByte += packet.getLength();
+                long currTime = System.currentTimeMillis();
+                if (currTime - prevTime >= 1000) {
+                    Log.i(LOG_TAG, String.valueOf(recvByte * 8 / 1024 / 1024) + " Mbps");
+                    recvByte = 0;
+                    prevTime = currTime;
+                }
+
                 int streamId = StreamingFrameBuffer.getInt(packet.getData());
                 streamingFrameBuffers[streamId].putPacket(packet);
             } catch (SocketTimeoutException e) {
@@ -58,7 +69,7 @@ class UdpStreamingReceiver extends AsyncTask<Void, Void, Void> {
     private void open(int port) {
         try {
             sock = new DatagramSocket(port);
-            sock.setSoTimeout(33);
+            sock.setSoTimeout(1);
         } catch (IOException e) {
             e.printStackTrace();
         }

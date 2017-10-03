@@ -49,13 +49,10 @@ public class StreamingFrameBuffer {
     }
 
     static int getInt(byte[] b, int offset) {
-        short[] s = {
-                (short)(b[offset + 0] & 0xFF),
-                (short)(b[offset + 1] & 0xFF),
-                (short)(b[offset + 2] & 0xFF),
-                (short)(b[offset + 3] & 0xFF),
-        };
-        return (s[0] << 24) | (s[1] << 16) | (s[2] << 8) | (s[3] << 0);
+        return  ((b[offset + 0] & 0xFF) << 24) |
+                ((b[offset + 1] & 0xFF) << 16) |
+                ((b[offset + 2] & 0xFF) <<  8) |
+                ((b[offset + 3] & 0xFF) <<  0);
     }
 
     int newFrameIndex() {
@@ -91,9 +88,9 @@ public class StreamingFrameBuffer {
                     // Check Frame No.
                     int frameNo = (getInt(packet.getData(), 4) >> 16) & 0x0000FFFF;
                     if (frameNo != nextFrameNo) {
-                        Log.i(LOG_TAG, "Expected frame No: " + nextFrameNo + " Actual: " + frameNo);
+                        Log.i(LOG_TAG, "Frame dropped (Expected frame No: " + nextFrameNo + " Actual: " + frameNo + ")");
                     } else {
-//                            Log.i(getClass().getSimpleName(), "Completed Frame No " + nextFrameNo);
+//                        Log.i(LOG_TAG, "Completed Frame No " + nextFrameNo);
                     }
                     nextFrameNo = frameNo + 1;
                     isDropped = false;
@@ -111,7 +108,7 @@ public class StreamingFrameBuffer {
         if (!isDropped && CHECK_SEQUENCE_NO && frameBufferPos > 0) {
             int seqNo = getInt(packet.getData(), 4) & 0x0000FFFF;
             if (seqNo != nextSequenceNo) { // Packet drop
-                Log.i(LOG_TAG, "Expected Sequence No: " + nextSequenceNo + " Actual: " + seqNo);
+                Log.i(LOG_TAG, "Packet lost (Expected Sequence No: " + nextSequenceNo + " Actual: " + seqNo + ")");
                 isDropped = true;
             } else {
                 nextSequenceNo++;

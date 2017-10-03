@@ -5,20 +5,19 @@ import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
-import android.widget.TableLayout;
-import android.widget.TableRow;
+import android.widget.LinearLayout;
 
 public class MainActivity extends AppCompatActivity {
     private static final String LOG_TAG = MainActivity.class.getSimpleName();
 
     private static final int TABLE_ROW = 2;
     private static final int TABLE_COL = 2;
-    private static final int MAX_STREAM_COUNT = 4;
+    private static final int MAX_STREAM_COUNT = TABLE_ROW * TABLE_COL;
 
-    private TableLayout tableLayout;
+    private LinearLayout linearCol;
+    private LinearLayout[] linearRow;
     private DecoderSurfaceView[] surfaceViews;
     private UdpStreamingReceiver receiver;
-    private boolean isFullscreen;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,40 +25,39 @@ public class MainActivity extends AppCompatActivity {
 
         receiver = new UdpStreamingReceiver(MAX_STREAM_COUNT);
 
-        tableLayout = new TableLayout(this);
+        linearCol = new LinearLayout(this);
+        linearCol.setOrientation(LinearLayout.VERTICAL);
+        linearRow = new LinearLayout[TABLE_ROW];
         surfaceViews = new DecoderSurfaceView[MAX_STREAM_COUNT];
         int i = 0;
-        for (int h = 0; h < TABLE_ROW; h++) {
-            TableRow tableRow = new TableRow(this);
-            for (int v = 0; v < TABLE_COL; v++) {
+        for (int v = 0; v < TABLE_COL; v++) {
+            linearRow[v] = new LinearLayout(this);
+            linearRow[v].setOrientation(LinearLayout.HORIZONTAL);
+            for (int h = 0; h < TABLE_ROW; h++) {
                 surfaceViews[i] = new DecoderSurfaceView(this, i);
-                tableRow.addView(surfaceViews[i], new TableRow.LayoutParams(TableRow.LayoutParams.MATCH_PARENT, TableRow.LayoutParams.MATCH_PARENT, 1));
+                surfaceViews[i].setOnClickListener(new DecoderSurfaceClickLister(surfaceViews[i], linearRow[v]));
+                LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT, 1);
+                linearRow[v].addView(surfaceViews[i], layoutParams);
                 i++;
             }
-            tableLayout.addView(tableRow, new TableLayout.LayoutParams(TableLayout.LayoutParams.MATCH_PARENT, TableLayout.LayoutParams.MATCH_PARENT, 1));
+            LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT, 1);
+            linearCol.addView(linearRow[v], layoutParams);
         }
-        setContentView(tableLayout);
+        setContentView(linearCol);
 
-        tableLayout.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                isFullscreen = (isFullscreen == true) ? false : true;
-                setFullscreen(isFullscreen);
-            }
-        });
         Log.d(LOG_TAG, "onCreate");
     }
 
     void setFullscreen(boolean isFullscreen) {
         if (isFullscreen) {
-            tableLayout.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
+            linearCol.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
                     | View.SYSTEM_UI_FLAG_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                     | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
         } else {
-            tableLayout.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            linearCol.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
         }
     }
@@ -67,8 +65,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onStart() {
         super.onStart();
-        isFullscreen = true;
-        setFullscreen(isFullscreen);
+        setFullscreen(true);
 
         if (receiver == null) {
             receiver = new UdpStreamingReceiver(MAX_STREAM_COUNT);
@@ -87,4 +84,29 @@ public class MainActivity extends AppCompatActivity {
         receiver = null;
         Log.d(LOG_TAG, "onStop");
     }
+
+    class DecoderSurfaceClickLister implements View.OnClickListener {
+
+        private final DecoderSurfaceView surfaceView;
+        private final LinearLayout linearLayout;
+
+        DecoderSurfaceClickLister(DecoderSurfaceView surfaceView, LinearLayout linearLayout) {
+            this.surfaceView = surfaceView;
+            this.linearLayout = linearLayout;
+        }
+
+        @Override
+        public void onClick(View v) {
+            LinearLayout.LayoutParams layoutParams;
+            layoutParams = (LinearLayout.LayoutParams)surfaceView.getLayoutParams();
+            if (layoutParams.weight != 0) {
+                layoutParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT, 0f);
+            } else {
+                layoutParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+            }
+            surfaceView.setLayoutParams(layoutParams);
+            linearLayout.setLayoutParams(layoutParams);
+        }
+    }
 }
+
