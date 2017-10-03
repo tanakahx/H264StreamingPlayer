@@ -11,7 +11,7 @@ import java.nio.ByteBuffer;
 public class DecoderThread extends Thread {
     private static final String LOG_TAG = DecoderThread.class.getSimpleName();
 
-    private static final int TIMEOUT_US = 1000000;
+    private static final int TIMEOUT_US = 1000;
 
     private boolean isCancelled;
     private int streamId;
@@ -58,14 +58,14 @@ public class DecoderThread extends Thread {
                 continue;
             }
 
-            int inputBufferId = decoder.dequeueInputBuffer(TIMEOUT_US);
+            int inputBufferId = decoder.dequeueInputBuffer(0);
             if (inputBufferId >= 0) {
                 ByteBuffer inputBuffer = decoder.getInputBuffer(inputBufferId);
                 inputBuffer.put(frameData.getData(), 0, frameData.getSize());
                 decoder.queueInputBuffer(inputBufferId, 0, frameData.getSize(), 0, 0); // TODO: MediaCodec.BUFFER_FLAG_KEY_FRAME
             }
 
-            int outputBufferId = decoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US);
+            int outputBufferId = decoder.dequeueOutputBuffer(bufferInfo, 0);
             if (outputBufferId >= 0) {
                 decoder.releaseOutputBuffer(outputBufferId, true);
             }
