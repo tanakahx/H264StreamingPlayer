@@ -37,4 +37,9 @@ public class DecoderSurfaceView extends SurfaceView implements SurfaceHolder.Cal
         decoderThread.cancel();
         Log.d(LOG_TAG, "surfaceDestroyed");
     }
+
+    @Override
+    public String toString() {
+        return decoderThread.toString();
+    }
 }

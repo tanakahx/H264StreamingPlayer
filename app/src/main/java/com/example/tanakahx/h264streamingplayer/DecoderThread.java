@@ -17,9 +17,11 @@ public class DecoderThread extends Thread {
     private int streamId;
     private Surface surface;
     private UdpStreamingReceiver receiver;
+    private int fps;
 
     DecoderThread(int streamId) {
         this.streamId= streamId;
+        fps = 0;
     }
 
     void setReceiver(UdpStreamingReceiver receiver) {
@@ -28,6 +30,13 @@ public class DecoderThread extends Thread {
 
     void setSurface(Surface surface) {
         this.surface = surface;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(fps).append(" fps");
+        return sb.toString();
     }
 
     @Override
@@ -46,7 +55,7 @@ public class DecoderThread extends Thread {
             return;
         }
 
-        long frameCount = 0;
+        int frameCount = 0;
         long prevTime = System.currentTimeMillis();
 
         while (!isCancelled) {
@@ -73,9 +82,9 @@ public class DecoderThread extends Thread {
             frameCount++;
             long currTime = System.currentTimeMillis();
             if (currTime - prevTime >= 1000) {
-                Log.i(LOG_TAG, frameCount + " fps");
-                prevTime = currTime;
+                fps = frameCount;
                 frameCount = 0;
+                prevTime = currTime;
             }
         }
         decoder.stop();

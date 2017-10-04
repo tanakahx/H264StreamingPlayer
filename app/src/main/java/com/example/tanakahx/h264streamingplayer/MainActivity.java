@@ -1,11 +1,17 @@
 package com.example.tanakahx.h264streamingplayer;
 
+import android.content.Context;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.util.StringBuilderPrinter;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 public class MainActivity extends AppCompatActivity {
     private static final String LOG_TAG = MainActivity.class.getSimpleName();
@@ -18,14 +24,17 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout[] linearRow;
     private DecoderSurfaceView[] surfaceViews;
     private UdpStreamingReceiver receiver;
+    private Handler handler;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
 
+        handler = new Handler();
         receiver = new UdpStreamingReceiver(MAX_STREAM_COUNT);
 
-        linearCol = new LinearLayout(this);
+        linearCol = (LinearLayout)findViewById(R.id.linear_col);
         linearCol.setOrientation(LinearLayout.VERTICAL);
         linearRow = new LinearLayout[TABLE_ROW];
         surfaceViews = new DecoderSurfaceView[MAX_STREAM_COUNT];
@@ -43,7 +52,6 @@ public class MainActivity extends AppCompatActivity {
             LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT, 1);
             linearCol.addView(linearRow[v], layoutParams);
         }
-        setContentView(linearCol);
 
         Log.d(LOG_TAG, "onCreate");
     }
@@ -74,6 +82,37 @@ public class MainActivity extends AppCompatActivity {
             surfaceView.setReceiver(receiver);
         }
         receiver.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+
+        AsyncTask<Void, Void, Void> reportTask = new AsyncTask<Void, Void, Void>() {
+            @Override
+            protected Void doInBackground(Void... params) {
+                while (!isCancelled()) {
+                    WifiManager wifiManager = (WifiManager)getSystemService(Context.WIFI_SERVICE);
+                    WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                    final StringBuilder sb = new StringBuilder();
+                    sb.append(wifiInfo).append("\n");
+                    sb.append(receiver).append(", ");
+                    for (DecoderSurfaceView surfaceView : surfaceViews) {
+                        sb.append(surfaceView).append(" ");
+                    }
+
+                    final TextView infoText = (TextView)findViewById(R.id.info_text);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            infoText.setText(sb.toString());
+                        }
+                    });
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                    }
+                }
+                return null;
+            }
+        };
+        reportTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+
         Log.d(LOG_TAG, "onStart");
     }
 
