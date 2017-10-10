@@ -8,7 +8,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.util.StringBuilderPrinter;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -23,6 +22,7 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout linearCol;
     private LinearLayout[] linearRow;
     private DecoderSurfaceView[] surfaceViews;
+    private DecoderSurfaceView selectedSurfaceView;
     private UdpStreamingReceiver receiver;
     private Handler handler;
 
@@ -86,14 +86,24 @@ public class MainActivity extends AppCompatActivity {
         AsyncTask<Void, Void, Void> reportTask = new AsyncTask<Void, Void, Void>() {
             @Override
             protected Void doInBackground(Void... params) {
+                WifiManager wifiManager = (WifiManager)getSystemService(Context.WIFI_SERVICE);
+                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
                 while (!isCancelled()) {
-                    WifiManager wifiManager = (WifiManager)getSystemService(Context.WIFI_SERVICE);
-                    WifiInfo wifiInfo = wifiManager.getConnectionInfo();
                     final StringBuilder sb = new StringBuilder();
                     sb.append(wifiInfo).append("\n");
                     sb.append(receiver).append(", ");
+                    int i = 0;
                     for (DecoderSurfaceView surfaceView : surfaceViews) {
-                        sb.append(surfaceView).append(" ");
+                        if (surfaceView == selectedSurfaceView) {
+                            sb.append("[");
+                        }
+                        sb.append("Ch").append(i).append(": ").append(surfaceView);
+                        if (surfaceView == selectedSurfaceView) {
+                            sb.append("] ");
+                        } else {
+                            sb.append(" ");
+                        }
+                        i++;
                     }
 
                     final TextView infoText = (TextView)findViewById(R.id.info_text);
@@ -140,8 +150,10 @@ public class MainActivity extends AppCompatActivity {
             layoutParams = (LinearLayout.LayoutParams)surfaceView.getLayoutParams();
             if (layoutParams.weight != 0) {
                 layoutParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT, 0f);
+                selectedSurfaceView = surfaceView;
             } else {
                 layoutParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+                selectedSurfaceView = null;
             }
             surfaceView.setLayoutParams(layoutParams);
             linearLayout.setLayoutParams(layoutParams);
