@@ -16,7 +16,7 @@ public class DecoderSurfaceView extends SurfaceView implements SurfaceHolder.Cal
         getHolder().addCallback(this);
     }
 
-    void setReceiver(UdpStreamingReceiver receiver) {
+    void setReceiver(StreamingReceiver receiver) {
         decoderThread.setReceiver(receiver);
     }
 

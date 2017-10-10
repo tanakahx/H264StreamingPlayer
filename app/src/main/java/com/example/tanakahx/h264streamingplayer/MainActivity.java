@@ -23,7 +23,7 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout[] linearRow;
     private DecoderSurfaceView[] surfaceViews;
     private DecoderSurfaceView selectedSurfaceView;
-    private UdpStreamingReceiver receiver;
+    private StreamingReceiver receiver;
     private Handler handler;
 
     @Override
@@ -81,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
         for (DecoderSurfaceView surfaceView : surfaceViews) {
             surfaceView.setReceiver(receiver);
         }
-        receiver.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+        receiver.start();
 
         AsyncTask<Void, Void, Void> reportTask = new AsyncTask<Void, Void, Void>() {
             @Override

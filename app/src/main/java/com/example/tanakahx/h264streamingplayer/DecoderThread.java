@@ -16,7 +16,7 @@ public class DecoderThread extends Thread {
     private boolean isCancelled;
     private int streamId;
     private Surface surface;
-    private UdpStreamingReceiver receiver;
+    private StreamingReceiver receiver;
     private int fps;
 
     DecoderThread(int streamId) {
@@ -24,7 +24,7 @@ public class DecoderThread extends Thread {
         fps = 0;
     }
 
-    void setReceiver(UdpStreamingReceiver receiver) {
+    void setReceiver(StreamingReceiver receiver) {
         this.receiver = receiver;
     }
 

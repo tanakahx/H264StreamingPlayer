@@ -2,7 +2,6 @@ package com.example.tanakahx.h264streamingplayer;
 
 import android.os.AsyncTask;
 import android.util.Log;
-import android.util.StringBuilderPrinter;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -10,7 +9,7 @@ import java.net.DatagramSocket;
 import java.net.SocketTimeoutException;
 import java.util.concurrent.LinkedBlockingDeque;
 
-class UdpStreamingReceiver extends AsyncTask<Void, Void, Void> {
+class UdpStreamingReceiver extends AsyncTask<Void, Void, Void> implements StreamingReceiver {
     private static final String LOG_TAG = UdpStreamingReceiver.class.getSimpleName();
 
     private static final int PACKET_BUFFER_SIZE = 2048; // Byte (should be greater than MTU)
@@ -36,7 +35,13 @@ class UdpStreamingReceiver extends AsyncTask<Void, Void, Void> {
         return sb.toString();
     }
 
-    FrameData getFrameData(int id, long timeoutUs) {
+    @Override
+    public void start() {
+        executeOnExecutor(THREAD_POOL_EXECUTOR);
+    }
+
+    @Override
+    public FrameData getFrameData(int id, long timeoutUs) {
         if (id < streamCount) {
             return streamingFrameBuffers[id].getFrameData(timeoutUs);
         } else {
