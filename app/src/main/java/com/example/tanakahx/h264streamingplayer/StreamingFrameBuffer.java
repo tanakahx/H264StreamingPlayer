@@ -88,9 +88,13 @@ public class StreamingFrameBuffer {
                     // Check Frame No.
                     int frameNo = (getInt(packet.getData(), 4) >> 16) & 0x0000FFFF;
                     if (frameNo != nextFrameNo) {
-                        Log.i(LOG_TAG, "Frame dropped (Expected frame No: " + nextFrameNo + " Actual: " + frameNo + ")");
+                        StringBuilder sb = new StringBuilder("Frame dropped (Expected frame No: ");
+                        sb.append(nextFrameNo).append(" Actual: ").append(frameNo).append(")");
+                        Log.i(LOG_TAG, sb.toString());
                     } else {
-//                        Log.i(LOG_TAG, "Completed Frame No " + nextFrameNo);
+//                        StringBuilder sb = new StringBuilder("Completed Frame No ");
+//                        sb.append(nextFrameNo);
+//                        Log.i(LOG_TAG, sb.toString());
                     }
                     nextFrameNo = frameNo + 1;
                     isDropped = false;
@@ -108,7 +112,9 @@ public class StreamingFrameBuffer {
         if (!isDropped && CHECK_SEQUENCE_NO && frameBufferPos > 0) {
             int seqNo = getInt(packet.getData(), 4) & 0x0000FFFF;
             if (seqNo != nextSequenceNo) { // Packet drop
-                Log.i(LOG_TAG, "Packet lost (Expected Sequence No: " + nextSequenceNo + " Actual: " + seqNo + ")");
+                StringBuilder sb = new StringBuilder("Packet lost (Expected Sequence No: ");
+                sb.append(nextSequenceNo).append(" Actual: ").append(seqNo).append(")");
+                Log.i(LOG_TAG, sb.toString());
                 isDropped = true;
             } else {
                 nextSequenceNo++;
@@ -128,7 +134,6 @@ public class StreamingFrameBuffer {
     }
 
     private void offerFrameData(FrameData frameBuffer) {
-        deque.poll();
         deque.offer(frameBuffer);
     }
 }
