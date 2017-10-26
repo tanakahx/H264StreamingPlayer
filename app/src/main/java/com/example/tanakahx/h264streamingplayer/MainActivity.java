@@ -32,7 +32,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         handler = new Handler();
-        receiver = new UdpStreamingReceiver(MAX_STREAM_COUNT);
+        receiver = new RtpStreamingReceiver(MAX_STREAM_COUNT);
 
         linearCol = (LinearLayout)findViewById(R.id.linear_col);
         linearCol.setOrientation(LinearLayout.VERTICAL);
@@ -76,7 +76,7 @@ public class MainActivity extends AppCompatActivity {
         setFullscreen(true);
 
         if (receiver == null) {
-            receiver = new UdpStreamingReceiver(MAX_STREAM_COUNT);
+            receiver = new RtpStreamingReceiver(MAX_STREAM_COUNT);
         }
         for (DecoderSurfaceView surfaceView : surfaceViews) {
             surfaceView.setReceiver(receiver);

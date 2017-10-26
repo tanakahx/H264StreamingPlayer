@@ -9,29 +9,29 @@ import java.net.DatagramSocket;
 import java.net.SocketTimeoutException;
 import java.util.concurrent.LinkedBlockingDeque;
 
-class UdpStreamingReceiver extends AsyncTask<Void, Void, Void> implements StreamingReceiver {
-    private static final String LOG_TAG = UdpStreamingReceiver.class.getSimpleName();
+class RtpStreamingReceiver extends AsyncTask<Void, Void, Void> implements StreamingReceiver {
+    private static final String LOG_TAG = RtpStreamingReceiver.class.getSimpleName();
 
     private static final int PACKET_BUFFER_SIZE = 2048; // Byte (should be greater than MTU)
-    private static final int UDP_STREAMING_PORT = 1234;
+    private static final int RTP_STREAMING_PORT = 1234;
 
     private int streamCount;
     private DatagramSocket sock;
-    private StreamingFrameBuffer streamingFrameBuffers[];
-    private long totalRecvByte;
+    private RtpStreamingFrameBuffer rtpStreamingFrameBuffers[];
+    private long totalReceiveByte;
 
-    UdpStreamingReceiver(int streamCount) {
+    RtpStreamingReceiver(int streamCount) {
         this.streamCount = streamCount;
-        streamingFrameBuffers = new StreamingFrameBuffer[this.streamCount];
-        for (int i = 0; i < streamingFrameBuffers.length; i++) {
-            streamingFrameBuffers[i] = new StreamingFrameBuffer(new LinkedBlockingDeque<FrameData>(1));
+        rtpStreamingFrameBuffers = new RtpStreamingFrameBuffer[this.streamCount];
+        for (int i = 0; i < rtpStreamingFrameBuffers.length; i++) {
+            rtpStreamingFrameBuffers[i] = new RtpStreamingFrameBuffer(new LinkedBlockingDeque<FrameData>(1));
         }
-        totalRecvByte = 0;
+        totalReceiveByte = 0;
     }
 
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append((float)(totalRecvByte * 8.0 / 1024 / 1024)).append(" Mbps");
+        sb.append((float)(totalReceiveByte * 8.0 / 1024 / 1024)).append(" Mbps");
         return sb.toString();
     }
 
@@ -43,7 +43,7 @@ class UdpStreamingReceiver extends AsyncTask<Void, Void, Void> implements Stream
     @Override
     public FrameData getFrameData(int id, long timeoutUs) {
         if (id < streamCount) {
-            return streamingFrameBuffers[id].getFrameData(timeoutUs);
+            return rtpStreamingFrameBuffers[id].getFrameData(timeoutUs);
         } else {
             return null;
         }
@@ -53,23 +53,23 @@ class UdpStreamingReceiver extends AsyncTask<Void, Void, Void> implements Stream
     protected Void doInBackground(Void... params) {
         DatagramPacket packet = new DatagramPacket(new byte[PACKET_BUFFER_SIZE], PACKET_BUFFER_SIZE);
         long prevTime = System.currentTimeMillis();
-        long recvByte = 0;
+        long receiveByte = 0;
 
-        open(UDP_STREAMING_PORT);
+        open(RTP_STREAMING_PORT);
         while (!isCancelled()) {
             try {
                 sock.receive(packet);
 
-                recvByte += packet.getLength();
+                receiveByte += packet.getLength();
                 long currTime = System.currentTimeMillis();
                 if (currTime - prevTime >= 1000) {
-                    totalRecvByte = recvByte;
-                    recvByte = 0;
+                    totalReceiveByte = receiveByte;
+                    receiveByte = 0;
                     prevTime = currTime;
                 }
 
-                int streamId = StreamingFrameBuffer.getInt(packet.getData());
-                streamingFrameBuffers[streamId].putPacket(packet);
+                int streamId = RtpStreamingFrameBuffer.getInt(packet.getData(), 8);
+                rtpStreamingFrameBuffers[streamId].putPacket(packet);
             } catch (SocketTimeoutException e) {
             } catch (IOException e) {
                 e.printStackTrace();
